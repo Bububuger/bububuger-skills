@@ -1,0 +1,26 @@
+{
+  "skill_name": "project-reviewer",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我看看这个项目有什么问题，挑挑毛病",
+      "expected_output": "A comprehensive multi-perspective review report covering type safety, architecture, testing, security, etc. with prioritized findings (P0-P3), scores per dimension, and a remediation roadmap.",
+      "files": [],
+      "context": "Run against /Users/javis/Documents/workspace/projects/spanory-all/spanory"
+    },
+    {
+      "id": 2,
+      "prompt": "Do a quick code audit focusing on security and testing only",
+      "expected_output": "A focused report covering only Security Auditor and Test Inspector perspectives, with findings and scores for those two dimensions.",
+      "files": [],
+      "context": "Run against /Users/javis/Documents/workspace/projects/spanory-all/spanory"
+    },
+    {
+      "id": 3,
+      "prompt": "review this project's code quality and give me a health check report",
+      "expected_output": "Full 10-perspective review with all reviewers spawned in parallel, comprehensive report with scores, findings, commendations, and roadmap.",
+      "files": [],
+      "context": "Run against /Users/javis/Documents/workspace/projects/spanory-all/spanory"
+    }
+  ]
+}
