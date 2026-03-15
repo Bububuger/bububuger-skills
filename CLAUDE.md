@@ -1,6 +1,6 @@
-# Project Governance Skills
+# Bububuger Skills
 
-A Claude Code plugin packaging three project governance skills.
+A Claude Code plugin packaging project governance skills.
 
 ## Skills
 

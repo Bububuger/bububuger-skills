@@ -1,5 +1,5 @@
 {
-  "name": "project-governance-skills",
+  "name": "bububuger-skills",
   "metadata": {
     "description": "Project governance toolkit — audit codebases, scaffold documentation, and dispatch findings to issue trackers. Three skills that work independently or chain together: project-reviewer → review-dispatcher, with docs-scaffold for documentation structure.",
     "version": "1.0.0"
