@@ -53,7 +53,7 @@ Maintain state:
 REVIEW_RAW=$(mktemp /tmp/claude-review-raw-XXXXXX.md)
 REVIEW_CLEAN=$(mktemp /tmp/claude-review-clean-XXXXXX.md)
 
-claude -p "You are a senior code reviewer (Claude Opus). You are reviewing code produced by another AI agent (Codex/GPT).
+claude -p --dangerously-skip-permissions "You are a senior code reviewer (Claude Opus). You are reviewing code produced by another AI agent (Codex/GPT).
 
 ## Project Constraints
 $(cat "$AGENTS_FILE")
@@ -66,7 +66,7 @@ Please review comprehensively:
 2. Architecture compliance — Does it follow AGENTS.md constraints (Contract-First, immutable design, field registry, adapter isolation, etc.)?
 3. Type safety — Is TypeScript strict mode satisfied? Does 'any' leak?
 4. Cross-package boundaries — Are there direct internal file imports that violate rootDir rules?
-5. Test coverage — Are new logic paths covered by tests?
+5. Test coverage — Are new logic paths covered by tests? Run \`npm run check && npm test\` to verify.
 6. Security — Are there secret leaks or injection risks?
 
 Classify each issue as P0 (blocking) / P1 (important) / P2 (suggestion).
@@ -86,7 +86,7 @@ Read `$REVIEW_CLEAN` to determine the outcome.
 ### Round 2/3 — Incremental Review
 
 ```bash
-claude -p "You are a senior code reviewer (Claude Opus), conducting round {round} of review.
+claude -p --dangerously-skip-permissions "You are a senior code reviewer (Claude Opus), conducting round {round} of review.
 
 ## Previous Review Results
 {review_history}
@@ -94,10 +94,14 @@ claude -p "You are a senior code reviewer (Claude Opus), conducting round {round
 ## Changes Made This Round
 {fix_summary}
 
-## Project Constraints
-$(cat "$AGENTS_FILE")
+## Key Constraints (subset — full constraints were provided in round 1)
+- Contract-First: all implementations align with docs/design/contract.md
+- Immutable design: create new objects, never mutate
+- Field registry: new agentic.* fields must be registered in telemetry/field-spec.yaml
+- Adapter isolation: runtime logic stays within adapter boundary
+- Cross-package imports must use package name, not relative paths
 
-## Change Diff
+## Change Diff (incremental)
 $(git diff origin/main...HEAD)
 
 Please complete:
