@@ -6,115 +6,114 @@ description:
   against AGENTS.md constraints and exec-plan acceptance criteria. Write→Review→Fix
   loop runs at most 3 rounds; P0-free exits with APPROVE, otherwise escalates to
   Human Review. Use this skill after self-review (Step 3a) passes but before
-  approving the PR.
+  approving the PR. Trigger immediately — do not skip this gate.
 ---
 
 # Cross-Model Review (Claude reviews Codex)
 
-Codex 完成开发 + 本地验证后，调用本地 Claude CLI 进行异构模型审查。
-不同模型有不同的知识盲区，交叉审查能暴露自审无法发现的问题。
+After Codex completes development and local validation passes, invoke the local Claude CLI for heterogeneous-model review. Different models have different blind spots; cross-model review surfaces issues that self-review cannot catch.
 
-## 前置条件
+## Prerequisites
 
-- 代码已实现并通过本地验证（`npm run check && npm test`）
-- 变更已 commit 到当前分支
-- `claude` CLI 可用（`which claude` 应返回路径）
-- `ANTHROPIC_API_KEY` 在环境变量中（`shell_environment_policy.inherit=all` 已配置）
+- Code is implemented and passes local validation (`npm run check && npm test`)
+- Changes are committed to the current branch
+- `claude` CLI is available (`which claude` should return a path)
+- `ANTHROPIC_API_KEY` is set in the environment (`shell_environment_policy.inherit=all` configured)
 
-## 调用时机
+## Invocation Timing
 
-在 WORKFLOW.md Step 3a（auto-review）**自审通过后、approve 前**调用。
+Invoke **after** WORKFLOW.md Step 3a (auto-review) self-review passes and **before** approving the PR.
 
-## 输入收集
+## Input Collection
 
-调用前收集以下上下文：
+Collect the following context before invoking:
 
 ```bash
-# 1. diff（相对于 main）
+# 1. diff (relative to main)
 DIFF_FILE=$(mktemp /tmp/cross-review-diff-XXXXXX.md)
 git diff origin/main...HEAD > "$DIFF_FILE"
 
-# 2. AGENTS.md 约束
+# 2. AGENTS.md constraints
 AGENTS_FILE="AGENTS.md"
 
-# 3. exec-plan（从 issue description 中解析路径，如有）
+# 3. exec-plan (parse path from issue description, if present)
 # EXEC_PLAN_FILE="docs/exec-plans/bub-xxx.md"
 ```
 
-## 审查循环（最多 3 轮）
+## Review Loop (max 3 rounds)
 
-维护状态：
-- `round`：当前轮次（1-3）
-- `review_history`：历轮审查结果累积
-- `fix_summary`：本轮修改摘要
+Maintain state:
+- `round`: current round number (1–3)
+- `review_history`: accumulated results from all previous rounds
+- `fix_summary`: summary of changes made this round
 
-### 第 1 轮 — 初始审查
+### Round 1 — Initial Review
 
 ```bash
 REVIEW_RAW=$(mktemp /tmp/claude-review-raw-XXXXXX.md)
 REVIEW_CLEAN=$(mktemp /tmp/claude-review-clean-XXXXXX.md)
 
-claude -p "你是资深代码审查者（Claude Opus）。你正在审查另一个 AI Agent（Codex/GPT）的代码产出。
+claude -p "You are a senior code reviewer (Claude Opus). You are reviewing code produced by another AI agent (Codex/GPT).
 
-## 项目约束
+## Project Constraints
 $(cat "$AGENTS_FILE")
 
-## 变更 Diff
+## Change Diff
 $(cat "$DIFF_FILE")
 
-请全面审查：
-1. 正确性 — 逻辑是否正确，边界条件是否处理
-2. 架构合规 — 是否遵守 AGENTS.md 中的约束（Contract-First、不可变设计、字段注册制、适配器隔离等）
-3. 类型安全 — TypeScript strict 是否满足，any 是否泄露
-4. 跨包边界 — 是否有 rootDir 违规的直接内部文件 import
-5. 测试覆盖 — 新增逻辑是否有对应测试
-6. 安全性 — 是否有密钥泄露、注入风险
+Please review comprehensively:
+1. Correctness — Is the logic correct? Are edge cases handled?
+2. Architecture compliance — Does it follow AGENTS.md constraints (Contract-First, immutable design, field registry, adapter isolation, etc.)?
+3. Type safety — Is TypeScript strict mode satisfied? Does 'any' leak?
+4. Cross-package boundaries — Are there direct internal file imports that violate rootDir rules?
+5. Test coverage — Are new logic paths covered by tests?
+6. Security — Are there secret leaks or injection risks?
 
-按 P0(阻塞)/P1(重要)/P2(建议) 分级列出问题。
-每个问题附具体文件路径和行号。
-如果无 P0 问题，在末尾注明 NO_P0。
+Classify each issue as P0 (blocking) / P1 (important) / P2 (suggestion).
+Attach the specific file path and line number for each issue.
+If there are no P0 issues, write NO_P0 at the end.
 
 <<<REVIEW_BEGIN>>>
-（在此标记之间输出结构化审查结论）
+(Output structured review findings between these markers)
 <<<REVIEW_END>>>" 2>&1 | tee "$REVIEW_RAW"
 
-# 提取干净结果
+# Extract clean result
 bash "{skill_dir}/scripts/extract-review.sh" "$REVIEW_RAW" "$REVIEW_CLEAN"
 ```
 
-读取 `$REVIEW_CLEAN` 判断结果。
+Read `$REVIEW_CLEAN` to determine the outcome.
 
-### 第 2/3 轮 — 增量审查
+### Round 2/3 — Incremental Review
 
 ```bash
-claude -p "你是资深代码审查者（Claude Opus），正在进行第 {round} 轮审查。
+claude -p "You are a senior code reviewer (Claude Opus), conducting round {round} of review.
 
-## 上轮审查结果
+## Previous Review Results
 {review_history}
 
-## 本轮修改摘要
+## Changes Made This Round
 {fix_summary}
 
-## 项目约束
+## Project Constraints
 $(cat "$AGENTS_FILE")
 
-## 变更 Diff
+## Change Diff
 $(git diff origin/main...HEAD)
 
-请完成：
-1. 验证上轮 P0/P1 问题是否已修复，逐条标注 [已修复] 或 [未修复]
-2. 检查修改是否引入新问题
-3. 整体增量评审
+Please complete:
+1. Verify whether each P0/P1 issue from the previous round has been fixed — mark each as [FIXED] or [NOT FIXED]
+2. Check whether the changes introduced any new issues
+3. Overall incremental review
 
-输出格式：
-### 上轮问题验证
-- [已修复/未修复] 问题描述
+Output format:
+### Previous Issue Verification
+- [FIXED/NOT FIXED] Issue description
 
-### 新发现问题
-按 P0/P1/P2 分级。无新 P0 注明 NO_P0。
+### New Issues Found
+Classified as P0/P1/P2. Write NO_P0 if no new P0 issues.
 
-### 遗留问题汇总
-仍未解决的问题列表。
+### Outstanding Issues Summary
+List of unresolved issues.
 
 <<<REVIEW_BEGIN>>>
 <<<REVIEW_END>>>" 2>&1 | tee "$REVIEW_RAW"
@@ -122,62 +121,64 @@ $(git diff origin/main...HEAD)
 bash "{skill_dir}/scripts/extract-review.sh" "$REVIEW_RAW" "$REVIEW_CLEAN"
 ```
 
-## 判断逻辑
+## Judgment Logic
 
-- **无 P0**（结果含 `NO_P0`） → **通过**，在 workpad 记录 P1 供参考
-- **有 P0 且轮次 < 3** → 修复问题，commit，下一轮
-- **第 3 轮仍有 P0** → 中断，移至 `Human Review`
-- **收敛检测** → P0 数量较上轮不减反增，立即中断（方向有误）
+- **No P0** (result contains `NO_P0`) → **PASS** — record P1 issues in workpad for reference
+- **P0 present and round < 3** → fix issues, commit, proceed to next round
+- **P0 still present after round 3** → abort, escalate to `Human Review`
+- **Convergence check** → if P0 count increases compared to the previous round, abort immediately (wrong direction)
 
-## 修复原则
+## Fix Principles
 
-- 只改被指出的问题，不借机重构
-- 每次修改后重跑本地验证（`npm run check && npm test`），确认不引入回归
-- 记录 `fix_summary` 供下轮审查用
+- Only fix the issues that were flagged — do not take the opportunity to refactor
+- Re-run local validation after each fix (`npm run check && npm test`) to confirm no regressions
+- Record `fix_summary` for use in the next review round
 
-## 通过后动作
+## Actions on Pass
 
-审查通过后：
-1. 在 workpad `### Cross-Review` section 记录：
+After review passes:
+1. Record in workpad under `### Cross-Review` section:
    ```
    - Reviewer: Claude Opus
    - Rounds: {n}/3
    - Result: APPROVED
-   - P1 remaining: {列表或"无"}
+   - P1 remaining: {list or "none"}
    ```
-2. 继续 WORKFLOW.md 的 approve → merge 流程
+2. Continue with the approve → merge flow in WORKFLOW.md
 
-## 未通过（3轮后）动作
+## Actions on Failure (after 3 rounds)
 
-1. 在 workpad 记录审查未通过及遗留 P0
-2. 移至 `Human Review`
+1. Record review failure and outstanding P0 issues in workpad
+2. Escalate to `Human Review`
 
-## 每轮输出
+## Per-Round Output
+
+> Output in Chinese for the human user
 
 ```
---- 第 {n}/3 轮 · 跨模型审查 ---
-审查方: Claude Opus (local CLI)
-结果: P0:{x} P1:{x} P2:{x}
-{上轮修复验证（第2轮起）}
-{问题列表}
-修改: {fix_summary}
+--- Round {n}/3 · Cross-Model Review ---
+Reviewer: Claude Opus (local CLI)
+Result: P0:{x} P1:{x} P2:{x}
+{Previous round fix verification (from round 2 onward)}
+{Issue list}
+Changes: {fix_summary}
 ```
 
-## 规则
+## Rules
 
-1. **自审通过才调用** — 本 skill 是自审之后的第二道门，不替代自审。
-2. **本地执行** — 通过 `claude -p` 调用本地 CLI，API key 不离开机器。
-3. **3 轮硬限** — 超过 3 轮交 Human Review，防止无限循环。
-4. **收敛优先** — P0 不减反增时立即中断。
-5. **小步修复** — 只改被指出的问题，不扩大范围。
-6. **P0-free 即通过** — P1 列出供参考，不阻塞。
-7. **等进程退出** — `claude -p` 是同步调用，等返回后再解析。
+1. **Self-review must pass first** — this skill is the second gate after self-review, not a replacement for it.
+2. **Local execution** — invoked via `claude -p` on the local CLI; the API key never leaves the machine.
+3. **Hard 3-round limit** — hand off to Human Review after 3 rounds to prevent infinite loops.
+4. **Convergence first** — abort immediately if P0 count increases.
+5. **Small targeted fixes** — only fix what was flagged; do not expand scope.
+6. **P0-free = pass** — P1 issues are listed for reference but do not block.
+7. **Wait for process exit** — `claude -p` is a synchronous call; wait for it to return before parsing output.
 
-## Claude CLI 注意事项
+## Claude CLI Notes
 
-| 问题 | 应对 |
-|------|------|
-| `claude -p` 输出可能含 ANSI escape | 管道到 `tee` 会自动去除 |
-| diff 过大超 context | 只传改动文件的 diff，不传整个 repo |
-| claude CLI 不存在 | `which claude` 检查，不存在则跳过 cross-review，走原有 auto-review |
-| API 调用失败 | 重试 1 次，仍失败则跳过 cross-review 并在 workpad 注明 |
+| Issue | Mitigation |
+|-------|------------|
+| `claude -p` output may contain ANSI escape codes | Piping through `tee` strips them automatically |
+| Diff too large for context window | Pass only the diff for changed files, not the entire repo |
+| `claude` CLI not found | Check with `which claude`; if absent, skip cross-review and fall back to auto-review only |
+| API call fails | Retry once; if still failing, skip cross-review and note it in workpad |

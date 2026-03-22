@@ -1,194 +1,210 @@
 ---
 name: human-review
-description: "丞相审查 Codex 提交的 Human Review issue。逐个读 workpad、检查 PR、根据 checkpoint_type 裁决（Merging 或 Rework）。触发词：human review、审查PR、处理review、review items、看下PR、验收、approve。当主公说'处理下human review的item'或'看下PR'时必须使用本skill。即使只有一个issue也要走完整流程。"
+description: "Chancellor reviews Human Review issues submitted by Codex. Read each workpad, inspect the PR, and decide (Merging or Rework) based on checkpoint_type. Trigger words: human review, review PR, process review, review items, check PR, acceptance, approve. When the user says 'handle the human review items' or 'check the PR', this skill MUST be used. Even with a single issue, run the full protocol. Trigger immediately — never skip this skill when review work is present."
 ---
 
 # Human Review
 
-丞相是 Harness Engineer。审的是设计意图，不是代码质量——CI、自审、交叉审查已经保证了代码能跑。
+The Chancellor acts as Harness Engineer. The focus is design intent, not code quality — CI, self-review, and cross-model review already ensure the code runs.
 
-这个 skill 的每一步都有对应的输出格式。如果跳过某步，输出格式就填不出来，这是有意设计的——确保每步都被执行。
+Every step of this skill has a corresponding output format. If a step is skipped, its output block cannot be filled in. This is intentional — it ensures every step is actually executed.
 
-## 获取 issues
+## Fetch Issues
 
 ```
 Linear MCP: list_issues(team: "Bububuger", state: "Human Review")
 ```
 
-然后对**每个 issue 逐个**执行下面的审查协议。不要批量处理——一个 issue 走完全部步骤、输出完整记录后，再处理下一个。
+Then process **each issue one at a time**. Do not batch-process — complete all steps and produce the full output record for one issue before moving to the next.
 
 ---
 
-## 审查协议（每个 issue 必须完整执行）
+## Review Protocol (must be executed in full for each issue)
 
-### Gate 1: 收集事实
+### Gate 1: Collect Facts
 
-**必须完成以下 3 项查询，并输出结果，才能进入 Gate 2。**
+**All 3 queries below must be completed and their output written before proceeding to Gate 2.**
 
-**1a. 读 workpad**
+**1a. Read the workpad**
 
-用 Linear MCP 的 `list_comments` 获取 issue 的评论，找到 `## Codex Workpad` 标记的评论。
+Use Linear MCP `list_comments` to fetch issue comments and find the comment marked `## Codex Workpad`.
 
-输出（照实填写，不可省略）：
+Output (fill in accurately — omission is not allowed):
 ```
-[BUB-xxx] Workpad 状态:
-  - workpad 存在: yes / no
-  - Risk Assessment: {照抄 risk_level 和 checkpoint_type，或 "缺失"}
-  - Plan 完成度: {已勾选/总数，如 "5/5" 或 "3/7"}
-  - Acceptance Criteria: {已勾选/总数}
-  - Validation: {跑了什么命令，结果 pass/fail}
-  - Cross-Review: {APPROVED/ESCALATED/未执行/缺失}
-  - Blockers: {有/无，摘要}
-  - Confusions: {有/无，摘要}
+[BUB-xxx] Workpad Status:
+  - Workpad exists: yes / no
+  - Risk Assessment: {copy risk_level and checkpoint_type exactly, or "missing"}
+  - Plan completion: {checked/total, e.g. "5/5" or "3/7"}
+  - Acceptance Criteria: {checked/total}
+  - Validation: {commands run, result pass/fail}
+  - Cross-Review: {APPROVED / ESCALATED / not executed / missing}
+  - Blockers: {yes/no, summary}
+  - Confusions: {yes/no, summary}
 ```
 
-**1b. 检查 PR**
+**1b. Check the PR**
 
 ```bash
 gh pr list --repo Bububuger/spanory --state open --json number,headRefName,title \
   --jq '.[] | select(.headRefName | contains("{issue-id-lowercase}"))'
 ```
 
-输出：
+Output:
 ```
-  - PR 存在: yes (#XX) / no
-  - CI 状态: pass / fail / pending
-```
-
-**1c. 读 exec-plan**
-
-从 issue description 中解析 `exec-plan →` 路径，读取文件。
-
-输出：
-```
-  - exec-plan 存在: yes (路径) / no
-  - 验收标准数: {N 条}
+  - PR exists: yes (#XX) / no
+  - CI status: pass / fail / pending
 ```
 
-**Gate 1 检查：以上 3 项输出都填写后才继续。如果直接跳到 Gate 2，回来补。**
+**1c. Read the exec-plan**
+
+Parse the `exec-plan →` path from the issue description and read the file.
+
+Output:
+```
+  - exec-plan exists: yes (path) / no
+  - Acceptance criteria count: {N items}
+```
+
+**Gate 1 check: All 3 output blocks must be filled in before continuing. If you jumped to Gate 2, come back and fill them in.**
 
 ---
 
-### Gate 2: 判断情况并裁决
+### Gate 2: Identify Situation and Decide
 
-根据 Gate 1 收集的事实，对照下表确定情况和唯一合法的状态流转：
+Using the facts collected in Gate 1, match the situation against the table below and apply the only valid state transition:
 
 ```
-情况 A: workpad 存在 + PR 存在 + CI pass
-  → 这是标准审查。进入 Gate 3 审查设计意图。
+Situation A: workpad exists + PR exists + CI pass
+  → Standard review. Proceed to Gate 3 to review design intent.
 
-情况 B: workpad 存在 + PR 存在 + CI fail
-  → 不审查。移到 Rework，附评论 "CI failing, fix before re-review"。
+Situation B: workpad exists + PR exists + CI fail
+  → Do not review. Move to Rework with comment "CI failing, fix before re-review".
 
-情况 C: workpad 存在 + 无 PR
-  → 读 workpad Blockers 节。如果有 blocker → 帮助解决后移到 In Progress。
-  → 如果无 blocker → 这是异常，移到 In Progress 让 Codex 继续。
+Situation C: workpad exists + no PR
+  → Read the Blockers section in the workpad.
+  → If blocker exists → help resolve it, then move to In Progress.
+  → If no blocker → this is an anomaly; move to In Progress for Codex to continue.
 
-情况 D: 无 workpad + PR 存在
-  → Harness 异常（Codex 跳过了 workpad）。记录到失败台账。
-  → 仍然审查 PR diff，裁决后移到 Merging 或 Rework。
+Situation D: no workpad + PR exists
+  → Harness anomaly (Codex skipped the workpad). Log to the failure ledger.
+  → Still review the PR diff; move to Merging or Rework based on findings.
 
-情况 E: 无 workpad + 无 PR
-  → Codex 还没开始工作。移到 In Progress（不是 Todo）。
-  → 如果 issue 从未被 Codex 领取过（状态直接从创建跳到 Human Review），
-    移到 Todo 是唯一允许的例外——但必须在输出中注明原因。
+Situation E: no workpad + no PR
+  → Codex has not started work. Move to In Progress (not Todo).
+  → Exception: if the issue was never picked up by Codex (status jumped directly from created to Human Review),
+    moving to Todo is the only permitted exception — but the reason must be stated in the output.
+
+Situation F: human-action requires Chancellor to act on Codex's behalf (apply patch / create PR / etc.)
+  → Chancellor must judge: after completing the human-action, does Codex still need to continue?
+
+  F1: human-action is an auxiliary operation (make a decision / configure secrets / grant authorization) → Codex still needs to continue
+    → Execute the operation, then move to In Progress
+
+  F2: human-action is a completion operation (apply patch / create branch / push / create PR) → Chancellor has done all remaining work for Codex
+    → Chancellor directly: apply patch → commit → push → create PR → merge PR → move to Done
+    → Do NOT use Merging (Merging is for Codex's land skill; a PR created by the Chancellor is outside Codex's workspace)
 ```
 
-输出：
+Output:
 ```
-  - 情况: A / B / C / D / E
-  - 合法流转: → Merging / → Rework / → In Progress / → Todo(仅情况E且未领取)
+  - Situation: A / B / C / D / E / F1 / F2
+  - Valid transition: → Merging / → Rework / → In Progress / → Done (F2) / → Todo (Situation E unstarted only)
 ```
 
-**合法状态流转速查（从 Human Review 出发）：**
-- → **Merging**：审查通过，PR可合并
-- → **Rework**：审查不通过或CI失败，需要Codex修改
-- → **In Progress**：Codex工作未完成，需继续
-- → **Todo**：仅当 issue 从未被 Codex 领取过（情况 E 特例）
+**Valid state transitions from Human Review (quick reference):**
+- → **Merging**: Review passed; PR created by Codex is ready to merge (executed by Codex's land skill)
+- → **Rework**: Review failed or CI failing; Codex must revise
+- → **In Progress**: Codex work is incomplete, or human-action assistance is done and Codex must continue
+- → **Done**: Chancellor completed all remaining work (apply patch + create PR + merge); task is finished
+- → **Todo**: Only when the issue was never picked up by Codex (Situation E exception)
 
 ---
 
-### Gate 3: 审查设计意图（仅情况 A）
+### Gate 3: Review Design Intent (Situation A only)
 
-快速浏览 PR diff（`gh pr diff`），对照 exec-plan 的验收标准，回答：
+Quickly scan the PR diff (`gh pr diff`) against the exec-plan acceptance criteria and answer:
 
-1. 变更范围是否在 exec-plan 指定范围内？（有无越界修改）
-2. 验收标准是否全部满足？（逐条对照）
-3. 有无架构偏离？（违反 AGENTS.md 约束）
+1. Is the change scope within the bounds specified in the exec-plan? (Any out-of-scope modifications?)
+2. Are all acceptance criteria satisfied? (Check each one)
+3. Is there any architectural deviation? (Violation of AGENTS.md constraints)
 
-输出：
+Output:
 ```
-  - 范围合规: yes / no (越界: {文件列表})
-  - 验收标准: {满足数}/{总数}
-  - 架构偏离: none / {描述}
-  - 裁决: APPROVE → Merging / REJECT → Rework
-  - 原因: {一句话}
+  - Scope compliant: yes / no (out-of-scope: {file list})
+  - Acceptance criteria: {satisfied}/{total}
+  - Architectural deviation: none / {description}
+  - Decision: APPROVE → Merging / REJECT → Rework
+  - Reason: {one sentence}
 ```
 
-**裁决执行：**
-- APPROVE: `gh pr review --approve` + 移 issue 到 Merging
-- REJECT: PR 上留评论（指出哪条验收标准未满足或哪里架构偏离）+ 移 issue 到 Rework
+**Execute the decision:**
+- APPROVE: `gh pr review --approve` + move issue to Merging
+- REJECT: Leave a PR comment (specify which acceptance criterion failed or where the architectural deviation is) + move issue to Rework
 
 ---
 
-### Gate 4: Harness 改进（每个 issue 都做）
+### Gate 4: Harness Improvement (run for every issue)
 
-不管裁决通过还是不通过，回答：
+Regardless of the decision outcome, answer:
 
 ```
-  - 发现可工程化的改进: yes / no
-  - 改进内容: {描述} 或 "无"
-  - 行动: {已加 linter 规则 / 已更新 AGENTS.md / 记录到失败台账 / 无需行动}
+  - Engineerable improvement found: yes / no
+  - Improvement details: {description} or "none"
+  - Action: {added linter rule / updated AGENTS.md / logged to failure ledger / no action needed}
 ```
 
-如果有改进，当场执行（修改文件）或记录到 `docs/operations/agent-failure-log.md`。
+If there is an improvement, execute it immediately (edit the file) or log it to `docs/operations/agent-failure-log.md`.
 
-Codex workpad 的 `### Confusions` 节是改进 Harness 的重要信号——即使 review 通过也要看。
+The `### Confusions` section in the Codex workpad is an important signal for Harness improvement — read it even when the review passes.
 
 ---
 
-## 完整输出格式（每个 issue 一份）
+## Full Output Format (one record per issue)
+
+> Output in Chinese for the human user
 
 ```
 ========== BUB-xxx: {title} ==========
 
-[Gate 1: 事实收集]
-  - workpad 存在: ...
+[Gate 1: Fact Collection]
+  - Workpad exists: ...
   - Risk Assessment: ...
-  - Plan 完成度: ...
+  - Plan completion: ...
   - Acceptance Criteria: ...
   - Validation: ...
   - Cross-Review: ...
   - Blockers: ...
   - Confusions: ...
-  - PR 存在: ...
-  - CI 状态: ...
-  - exec-plan 存在: ...
-  - 验收标准数: ...
+  - PR exists: ...
+  - CI status: ...
+  - exec-plan exists: ...
+  - Acceptance criteria count: ...
 
-[Gate 2: 情况判断]
-  - 情况: ...
-  - 合法流转: ...
+[Gate 2: Situation]
+  - Situation: ...
+  - Valid transition: ...
 
-[Gate 3: 设计意图审查]  (仅情况 A)
-  - 范围合规: ...
-  - 验收标准: ...
-  - 架构偏离: ...
-  - 裁决: ...
-  - 原因: ...
+[Gate 3: Design Intent Review]  (Situation A only)
+  - Scope compliant: ...
+  - Acceptance criteria: ...
+  - Architectural deviation: ...
+  - Decision: ...
+  - Reason: ...
 
-[Gate 4: Harness 改进]
-  - 发现可工程化的改进: ...
-  - 改进内容: ...
-  - 行动: ...
+[Gate 4: Harness Improvement]
+  - Engineerable improvement found: ...
+  - Improvement details: ...
+  - Action: ...
 
-→ 状态流转: Human Review → {Merging / Rework / In Progress}
+→ State transition: Human Review → {Merging / Rework / In Progress}
 ==========================================
 ```
 
-处理完所有 issue 后，输出汇总表：
+After all issues are processed, output a summary table:
+
+> Output in Chinese for the human user
 
 ```
---- Human Review 完成 ---
-| Issue | 情况 | 裁决 | 流转 | Harness 改进 |
+--- Human Review Complete ---
+| Issue | Situation | Decision | Transition | Harness Improvement |
 ```
